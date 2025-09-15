@@ -4,7 +4,7 @@ from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 import requests
 
-st.title("Hospital and Police Station Finder - India (Optimized & Accurate)")
+st.title("Hospital and Police Station Finder - India")
 
 # --- User Input ---
 place_name = st.text_input("Enter your location (city/area/sub-area):")
@@ -47,15 +47,8 @@ if st.button("Find Nearby Resources"):
                             rlon = element.get('lon')
                             distance = round(geodesic(user_location, (rlat, rlon)).km, 2) if rlat and rlon else None
 
-                            # --- Determine Hospital Type ---
-                            final_type = r_type
-                            if r_type == "Hospital":
-                                name_lower = name.lower()
-                                operator = element['tags'].get('operator', '').lower()
-                                if "private" in operator or "private" in name_lower:
-                                    final_type = "Private Hospital"
-                                else:
-                                    final_type = "Government Hospital"
+                            # --- Resource Type ---
+                            final_type = r_type  # All hospitals just "Hospital"
 
                             # --- Get Location from tags or fallback to coordinates ---
                             tags = element.get('tags', {})
@@ -86,7 +79,7 @@ if st.button("Find Nearby Resources"):
                     st.dataframe(df[['Name','Type','Distance_km','Location']])
 
                     # --- Notify missing categories ---
-                    categories = ["Government Hospital","Private Hospital","Medical Camp","Police Station"]
+                    categories = ["Hospital","Medical Camp","Police Station"]
                     for cat in categories:
                         if not any(df['Type'] == cat):
                             st.info(f"No {cat} found near your location.")
