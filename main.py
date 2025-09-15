@@ -1,79 +1,48 @@
-import streamlit as st
-import pandas as pd
-from geopy.geocoders import Nominatim
-from geopy.distance import geodesic
-import requests
+# Resource queries
+resource_queries = {
+    "Hospital": '[amenity=hospital]',
+    "Medical Camps": '[healthcare=clinic][charity=yes]',
+    "Police Station": '[amenity=police]'
+}
 
-st.title("Nearby Free Resources Finder")
+all_results = []
+overpass_url = "http://overpass-api.de/api/interpreter"
 
-place_name = st.text_input("Enter your location (city/area/sub-area):")
-radius_km = st.number_input("Enter search radius in km:", min_value=1, max_value=50, value=10)
-
-if st.button("Find Nearby Resources"):
-    if not place_name.strip():
-        st.error("Please enter a location!")
-    else:
-        try:
-            # Use Nominatim to get coordinates
-            geolocator = Nominatim(user_agent="free_resources_finder")
-            location = geolocator.geocode(place_name, timeout=10)
+for r_type, tag in resource_queries.items():
+    query_resource = f"""
+    [out:json];
+    node(around:{radius_km*1000},{location.latitude},{location.longitude}){tag};
+    out center;
+    """
+    try:
+        res_response = requests.get(overpass_url, params={'data': query_resource}, timeout=30)
+        res_data = res_response.json()
+        for element in res_data.get('elements', []):
+            name = element['tags'].get('name', 'Unknown')
+            rlat = element.get('lat')
+            rlon = element.get('lon')
+            distance = round(geodesic(user_location, (rlat, rlon)).km, 2) if rlat and rlon else None
             
-            if not location:
-                st.error("Location not found. Try a more specific city/area/sub-area.")
-            else:
-                user_location = (location.latitude, location.longitude)
-                st.success(f"Coordinates found: {location.latitude}, {location.longitude}")
-                
-                # Resource queries
-                resource_queries = {
-                    "Government Hospital": '[amenity=hospital][operator~"government|Government"]',
-                    "Other Hospitals": '[amenity=hospital][!operator]',
-                    "Free Food": '[charity=food]',
-                    "Free Water": '[amenity=drinking_water]',
-                    "Medical Camps": '[healthcare=clinic][charity=yes]'
-                }
-                
-                all_results = []
-                overpass_url = "http://overpass-api.de/api/interpreter"
-                
-                for r_type, tag in resource_queries.items():
-                    query_resource = f"""
-                    [out:json];
-                    node(around:{radius_km*1000},{location.latitude},{location.longitude}){tag};
-                    out center;
-                    """
-                    try:
-                        res_response = requests.get(overpass_url, params={'data': query_resource}, timeout=30)
-                        res_data = res_response.json()
-                        for element in res_data.get('elements', []):
-                            name = element['tags'].get('name', 'Unknown')
-                            rlat = element.get('lat')
-                            rlon = element.get('lon')
-                            distance = round(geodesic(user_location, (rlat, rlon)).km, 2) if rlat and rlon else None
-                            area = element['tags'].get('addr:full') or element['tags'].get('addr:city') or "Unknown"
-                            all_results.append({
-                                'Name': name,
-                                'Type': r_type,
-                                'Distance_km': distance,
-                                'Location': area
-                            })
-                    except:
-                        st.warning(f"Error fetching {r_type} data from OpenStreetMap.")
-                
-                # Display results
-                if not all_results:
-                    st.info("No nearby free resources found!")
+            # Determine hospital type
+            final_type = r_type
+            if r_type == "Hospital":
+                operator = element['tags'].get('operator', '').lower()
+                if "government" in operator:
+                    final_type = "Government Hospital"
+                elif "private" in operator:
+                    final_type = "Private Hospital"
                 else:
-                    df = pd.DataFrame(all_results)
-                    df = df.sort_values(by='Distance_km')
-                    st.subheader(f"Nearby Free Resources within {radius_km} km")
-                    st.dataframe(df[['Name','Type','Distance_km','Location']])
-                    
-                    # Notify missing categories
-                    categories = ["Government Hospital","Other Hospitals","Free Food","Free Water","Medical Camps"]
-                    for cat in categories:
-                        if not any(df['Type'] == cat):
-                            st.info(f"No {cat} found near your location.")
-        except Exception:
-            st.error("Unable to fetch location or resources. Please try again later.")
-
+                    final_type = "Hospital (Unknown Type)"
+            
+            # Use OSM address tags for location
+            tags = element.get('tags', {})
+            area = tags.get('addr:full') or tags.get('addr:street') or tags.get('addr:city') or tags.get('addr:suburb') or tags.get('addr:state') or "Unknown"
+            
+            all_results.append({
+                'Name': name,
+                'Type': final_type,
+                'Distance_km': distance,
+                'Location': area
+            })
+    except:
+        st.warning(f"Error fetching {r_type} data from OpenStreetMap.")
