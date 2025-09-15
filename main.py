@@ -3,6 +3,7 @@ import pandas as pd
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 import requests
+import time
 
 st.title("Hospital and Police Station Finder - India")
 
@@ -15,7 +16,7 @@ if st.button("Find Nearby Resources"):
         st.error("Please enter a location!")
     else:
         try:
-            # Step 1: Get coordinates using Nominatim
+            # Step 1: Get user coordinates
             geolocator = Nominatim(user_agent="india_hospital_police_finder")
             location = geolocator.geocode(place_name, timeout=10)
             
@@ -25,7 +26,7 @@ if st.button("Find Nearby Resources"):
                 user_location = (location.latitude, location.longitude)
                 st.success(f"Coordinates found: {location.latitude}, {location.longitude}")
                 
-                # Step 2: Define resource queries
+                # Step 2: Define resources
                 resource_queries = {
                     "Government Hospital": '[amenity=hospital][operator~"government|Government"]',
                     "Private Hospital": '[amenity=hospital][operator~"private|Private"]',
@@ -50,7 +51,15 @@ if st.button("Find Nearby Resources"):
                             rlat = element.get('lat')
                             rlon = element.get('lon')
                             distance = round(geodesic(user_location, (rlat, rlon)).km, 2) if rlat and rlon else None
-                            area = element['tags'].get('addr:full') or element['tags'].get('addr:city') or "Unknown"
+                            
+                            # Step 3: Reverse geocode each resource for accurate location
+                            try:
+                                loc = geolocator.reverse((rlat, rlon), timeout=10)
+                                area = loc.address if loc else "Unknown"
+                                time.sleep(1)  # Avoid hitting rate limits
+                            except:
+                                area = "Unknown"
+                            
                             all_results.append({
                                 'Name': name,
                                 'Type': r_type,
@@ -60,7 +69,7 @@ if st.button("Find Nearby Resources"):
                     except:
                         st.warning(f"Error fetching {r_type} data from OpenStreetMap.")
                 
-                # Step 3: Display results with search/filter
+                # Step 4: Display results with search
                 if not all_results:
                     st.info("No nearby resources found!")
                 else:
@@ -68,7 +77,6 @@ if st.button("Find Nearby Resources"):
                     df = df.sort_values(by='Distance_km')
                     st.subheader(f"Nearby Resources within {radius_km} km")
                     
-                    # Add search box
                     search_term = st.text_input("Search in results:")
                     if search_term:
                         df_filtered = df[df.apply(lambda row: search_term.lower() in row.astype(str).str.lower().to_string(), axis=1)]
@@ -76,7 +84,6 @@ if st.button("Find Nearby Resources"):
                     else:
                         st.dataframe(df[['Name','Type','Distance_km','Location']])
                     
-                    # Notify missing categories
                     categories = ["Government Hospital","Private Hospital","Medical Camps","Police Station"]
                     for cat in categories:
                         if not any(df['Type'] == cat):
