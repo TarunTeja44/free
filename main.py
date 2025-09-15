@@ -4,7 +4,7 @@ from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 import requests
 
-st.title("Nearby Free Resources Finder - India")
+st.title("Hospital and Police Station Finder - India")
 
 # User input
 place_name = st.text_input("Enter your location (city/area/sub-area):")
@@ -16,7 +16,7 @@ if st.button("Find Nearby Resources"):
     else:
         try:
             # Step 1: Get coordinates using Nominatim
-            geolocator = Nominatim(user_agent="india_free_resources")
+            geolocator = Nominatim(user_agent="india_hospital_police_finder")
             location = geolocator.geocode(place_name, timeout=10)
             
             if not location:
@@ -28,11 +28,9 @@ if st.button("Find Nearby Resources"):
                 # Step 2: Define resource queries
                 resource_queries = {
                     "Government Hospital": '[amenity=hospital][operator~"government|Government"]',
-                    "Other Hospitals": '[amenity=hospital][!operator]',
-                    "Free Food": '[charity=food]',
-                    "Free Water": '[amenity=drinking_water]',
+                    "Private Hospital": '[amenity=hospital][operator~"private|Private"]',
                     "Medical Camps": '[healthcare=clinic][charity=yes]',
-                    "Free Wi-Fi": '[internet_access=wlan]'
+                    "Police Station": '[amenity=police]'
                 }
                 
                 all_results = []
@@ -62,17 +60,24 @@ if st.button("Find Nearby Resources"):
                     except:
                         st.warning(f"Error fetching {r_type} data from OpenStreetMap.")
                 
-                # Step 3: Display results
+                # Step 3: Display results with search/filter
                 if not all_results:
-                    st.info("No nearby free resources found!")
+                    st.info("No nearby resources found!")
                 else:
                     df = pd.DataFrame(all_results)
                     df = df.sort_values(by='Distance_km')
-                    st.subheader(f"Nearby Free Resources within {radius_km} km")
-                    st.dataframe(df[['Name','Type','Distance_km','Location']])
+                    st.subheader(f"Nearby Resources within {radius_km} km")
+                    
+                    # Add search box
+                    search_term = st.text_input("Search in results:")
+                    if search_term:
+                        df_filtered = df[df.apply(lambda row: search_term.lower() in row.astype(str).str.lower().to_string(), axis=1)]
+                        st.dataframe(df_filtered[['Name','Type','Distance_km','Location']])
+                    else:
+                        st.dataframe(df[['Name','Type','Distance_km','Location']])
                     
                     # Notify missing categories
-                    categories = ["Government Hospital","Other Hospitals","Free Food","Free Water","Medical Camps","Free Wi-Fi"]
+                    categories = ["Government Hospital","Private Hospital","Medical Camps","Police Station"]
                     for cat in categories:
                         if not any(df['Type'] == cat):
                             st.info(f"No {cat} found near your location.")
