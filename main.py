@@ -36,10 +36,11 @@ if st.button("Find Nearby Resources"):
 
                 # --- Fetch Resources ---
                 for r_type, tag in resource_queries.items():
-                    query_resource = f'[out:json][timeout:25];node(around:{radius_km*1000},{location.latitude},{location.longitude}){tag};out center 50;'
                     try:
+                        query_resource = f'[out:json][timeout:25];node(around:{radius_km*1000},{location.latitude},{location.longitude}){tag};out center 50;'
                         res = requests.get(overpass_url, params={'data': query_resource}, timeout=30)
                         data = res.json()
+                        
                         for element in data.get('elements', []):
                             name = element['tags'].get('name', 'Unknown')
                             rlat = element.get('lat')
@@ -66,8 +67,8 @@ if st.button("Find Nearby Resources"):
                                 'Distance_km': distance,
                                 'Location': area
                             })
-                    except:
-                        st.warning(f"Error fetching {r_type} data from OpenStreetMap.")
+                    except Exception as e:
+                        st.warning(f"Error fetching {r_type} data: {e}")
 
                 # --- Display Results ---
                 if not all_results:
@@ -83,3 +84,6 @@ if st.button("Find Nearby Resources"):
                     for cat in categories:
                         if not any(df['Type'] == cat):
                             st.info(f"No {cat} found near your location.")
+        except Exception as e:
+            st.error(f"Unable to fetch resources. {e}")
+
