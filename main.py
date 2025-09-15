@@ -26,10 +26,9 @@ if st.button("Find Nearby Resources"):
                 user_location = (location.latitude, location.longitude)
                 st.success(f"Coordinates found: {location.latitude}, {location.longitude}")
                 
-                # Step 2: Define resources
+                # Step 2: Define resource queries
                 resource_queries = {
-                    "Government Hospital": '[amenity=hospital][operator~"government|Government"]',
-                    "Private Hospital": '[amenity=hospital][operator~"private|Private"]',
+                    "Hospital": '[amenity=hospital]',
                     "Medical Camps": '[healthcare=clinic][charity=yes]',
                     "Police Station": '[amenity=police]'
                 }
@@ -52,7 +51,18 @@ if st.button("Find Nearby Resources"):
                             rlon = element.get('lon')
                             distance = round(geodesic(user_location, (rlat, rlon)).km, 2) if rlat and rlon else None
                             
-                            # Step 3: Reverse geocode each resource for accurate location
+                            # Determine type for hospitals
+                            final_type = r_type
+                            if r_type == "Hospital":
+                                operator = element['tags'].get('operator', '').lower()
+                                if "government" in operator:
+                                    final_type = "Government Hospital"
+                                elif "private" in operator:
+                                    final_type = "Private Hospital"
+                                else:
+                                    final_type = "Hospital (Unknown Type)"
+                            
+                            # Reverse geocode for accurate location
                             try:
                                 loc = geolocator.reverse((rlat, rlon), timeout=10)
                                 area = loc.address if loc else "Unknown"
@@ -62,14 +72,14 @@ if st.button("Find Nearby Resources"):
                             
                             all_results.append({
                                 'Name': name,
-                                'Type': r_type,
+                                'Type': final_type,
                                 'Distance_km': distance,
                                 'Location': area
                             })
                     except:
                         st.warning(f"Error fetching {r_type} data from OpenStreetMap.")
                 
-                # Step 4: Display results with search
+                # Step 3: Display results with search
                 if not all_results:
                     st.info("No nearby resources found!")
                 else:
@@ -77,6 +87,7 @@ if st.button("Find Nearby Resources"):
                     df = df.sort_values(by='Distance_km')
                     st.subheader(f"Nearby Resources within {radius_km} km")
                     
+                    # Search box
                     search_term = st.text_input("Search in results:")
                     if search_term:
                         df_filtered = df[df.apply(lambda row: search_term.lower() in row.astype(str).str.lower().to_string(), axis=1)]
@@ -84,7 +95,8 @@ if st.button("Find Nearby Resources"):
                     else:
                         st.dataframe(df[['Name','Type','Distance_km','Location']])
                     
-                    categories = ["Government Hospital","Private Hospital","Medical Camps","Police Station"]
+                    # Notify missing categories
+                    categories = ["Government Hospital","Private Hospital","Hospital (Unknown Type)","Medical Camps","Police Station"]
                     for cat in categories:
                         if not any(df['Type'] == cat):
                             st.info(f"No {cat} found near your location.")
