@@ -42,7 +42,18 @@ if st.button("Find Nearby Resources"):
                 resource_location = (row['Latitude'], row['Longitude'])
                 distance = geodesic(user_location, resource_location).km
                 if distance <= radius_km:
-                    resources.append({**row, 'Distance_km': round(distance, 2)})
+                    # Reverse geocode to get area name
+                    try:
+                        loc = geolocator.reverse(resource_location, exactly_one=True, timeout=10)
+                        area = loc.address if loc else "Unknown"
+                    except:
+                        area = "Unknown"
+                    resources.append({
+                        'Name': row['Name'],
+                        'Type': row['Type'],
+                        'Distance_km': round(distance, 2),
+                        'Area': area
+                    })
             return pd.DataFrame(resources)
 
         nearby_df = nearby_resources(df, user_location, radius_km)
@@ -53,6 +64,6 @@ if st.button("Find Nearby Resources"):
         else:
             # Display sorted by distance
             nearby_df = nearby_df.sort_values(by='Distance_km')
-            st.dataframe(nearby_df[['Name', 'Type', 'Distance_km']])
+            st.dataframe(nearby_df[['Name', 'Type', 'Distance_km', 'Area']])
     else:
         st.error("Location not found. Please enter a valid city/area/sub-area.")
