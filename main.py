@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
-from geopy.geocoders import Nominatim
-from geopy.distance import geodesic
 import requests
+from geopy.distance import geodesic
 
 st.title("Nearby Free Resources Finder")
 
@@ -14,70 +13,80 @@ if st.button("Find Nearby Resources"):
     if not place_name.strip():
         st.error("Please enter a location!")
     else:
-        geolocator = Nominatim(user_agent="free_resources_finder")
-        location = geolocator.geocode(place_name)
-        
-        if location:
-            user_location = (location.latitude, location.longitude)
-            st.success(f"Location found: {location.address}")
-            
-            all_results = []
-
-            # Define resource types and corresponding OSM tags
-            resource_queries = {
-                "Government Hospital": '[amenity=hospital][operator~"government|Government"]',
-                "Other Hospitals": '[amenity=hospital][!operator]',  # Hospitals without government operator tag
-                "Free Food": '[charity=food]',
-                "Free Water": '[amenity=drinking_water]',
-                "Medical Camps": '[healthcare=clinic][charity=yes]'  # Approximation
-            }
-
+        # Step 1: Use Overpass to find approximate coordinates of the place
+        try:
             overpass_url = "http://overpass-api.de/api/interpreter"
-
-            for r_type, tag in resource_queries.items():
-                query = f"""
-                [out:json];
-                node(around:{radius_km*1000},{location.latitude},{location.longitude}){tag};
-                out center;
-                """
-                try:
-                    response = requests.get(overpass_url, params={'data': query}, timeout=30)
-                    data = response.json()
-                    for element in data.get('elements', []):
-                        name = element['tags'].get('name', 'Unknown')
-                        lat = element.get('lat', None)
-                        lon = element.get('lon', None)
-                        # Reverse geocode to get area
-                        try:
-                            loc = geolocator.reverse((lat, lon), exactly_one=True, timeout=10)
-                            area = loc.address if loc else "Unknown"
-                        except:
-                            area = "Unknown"
-                        # Distance from user location
-                        distance = round(geodesic(user_location, (lat, lon)).km, 2) if lat and lon else None
-                        all_results.append({
-                            'Name': name,
-                            'Type': r_type,
-                            'Distance_km': distance,
-                            'Location': area
-                        })
-                except:
-                    st.warning(f"Error fetching {r_type} data from OpenStreetMap.")
-
-            # Display results
-            if not all_results:
-                st.info("No nearby free resources found!")
+            query_location = f"""
+            [out:json];
+            area["name"="{place_name}"];
+            out center;
+            """
+            response = requests.get(overpass_url, params={'data': query_location}, timeout=30)
+            data = response.json()
+            elements = data.get('elements', [])
+            if not elements:
+                st.error("Location not found in OpenStreetMap. Try a more specific area.")
             else:
-                df = pd.DataFrame(all_results)
-                df = df.sort_values(by='Distance_km')
-                st.subheader(f"Nearby Free Resources within {radius_km} km")
-                st.dataframe(df[['Name','Type','Distance_km','Location']])
-                
-                # Notify if a category is missing
-                categories = ["Government Hospital","Other Hospitals","Free Food","Free Water","Medical Camps"]
-                for cat in categories:
-                    if not any(df['Type'] == cat):
-                        st.info(f"No {cat} found near your location.")
-
-        else:
-            st.error("Location not found. Please enter a valid city/area/sub-area.")
+                # Use first matching area
+                element = elements[0]
+                lat = element.get('lat') or element.get('center', {}).get('lat')
+                lon = element.get('lon') or element.get('center', {}).get('lon')
+                if not lat or not lon:
+                    st.error("Could not determine coordinates of the location.")
+                else:
+                    user_location = (lat, lon)
+                    st.success(f"Approximate coordinates found: {lat}, {lon}")
+                    
+                    # Step 2: Query resources within radius
+                    resource_queries = {
+                        "Government Hospital": '[amenity=hospital][operator~"government|Government"]',
+                        "Other Hospitals": '[amenity=hospital][!operator]',
+                        "Free Food": '[charity=food]',
+                        "Free Water": '[amenity=drinking_water]',
+                        "Medical Camps": '[healthcare=clinic][charity=yes]'
+                    }
+                    
+                    all_results = []
+                    
+                    for r_type, tag in resource_queries.items():
+                        query_resource = f"""
+                        [out:json];
+                        node(around:{radius_km*1000},{lat},{lon}){tag};
+                        out center;
+                        """
+                        try:
+                            res_response = requests.get(overpass_url, params={'data': query_resource}, timeout=30)
+                            res_data = res_response.json()
+                            for element in res_data.get('elements', []):
+                                name = element['tags'].get('name', 'Unknown')
+                                rlat = element.get('lat')
+                                rlon = element.get('lon')
+                                # Distance
+                                distance = round(geodesic(user_location, (rlat, rlon)).km, 2) if rlat and rlon else None
+                                # Area/Address approximation
+                                area = element['tags'].get('addr:full') or element['tags'].get('addr:city') or "Unknown"
+                                all_results.append({
+                                    'Name': name,
+                                    'Type': r_type,
+                                    'Distance_km': distance,
+                                    'Location': area
+                                })
+                        except:
+                            st.warning(f"Error fetching {r_type} data from OpenStreetMap.")
+                    
+                    # Step 3: Display results
+                    if not all_results:
+                        st.info("No nearby free resources found!")
+                    else:
+                        df = pd.DataFrame(all_results)
+                        df = df.sort_values(by='Distance_km')
+                        st.subheader(f"Nearby Free Resources within {radius_km} km")
+                        st.dataframe(df[['Name','Type','Distance_km','Location']])
+                        
+                        # Notify missing categories
+                        categories = ["Government Hospital","Other Hospitals","Free Food","Free Water","Medical Camps"]
+                        for cat in categories:
+                            if not any(df['Type'] == cat):
+                                st.info(f"No {cat} found near your location.")
+        except Exception as e:
+            st.error("Unable to fetch location or resources. Please try again later.")
