@@ -4,7 +4,7 @@ from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 import requests
 
-st.title("Hospital and Police Station Finder - India (Optimized)")
+st.title("Hospital and Police Station Finder - India (Optimized & Accurate)")
 
 # --- User Input ---
 place_name = st.text_input("Enter your location (city/area/sub-area):")
@@ -50,16 +50,22 @@ if st.button("Find Nearby Resources"):
                             # --- Determine Hospital Type ---
                             final_type = r_type
                             if r_type == "Hospital":
+                                name_lower = name.lower()
                                 operator = element['tags'].get('operator', '').lower()
-                                if "private" in operator:
+                                if "private" in operator or "private" in name_lower:
                                     final_type = "Private Hospital"
                                 else:
                                     final_type = "Government Hospital"
 
-                            # --- Get Location from tags ---
+                            # --- Get Location from tags or fallback to coordinates ---
                             tags = element.get('tags', {})
                             area = tags.get('addr:full') or tags.get('addr:street') or tags.get('addr:city') \
-                                   or tags.get('addr:suburb') or tags.get('addr:state') or "Unknown"
+                                   or tags.get('addr:suburb') or tags.get('addr:state')
+                            if not area:
+                                if rlat and rlon:
+                                    area = f"Lat:{rlat}, Lon:{rlon}"
+                                else:
+                                    area = "Unknown"
 
                             all_results.append({
                                 'Name': name,
@@ -86,4 +92,3 @@ if st.button("Find Nearby Resources"):
                             st.info(f"No {cat} found near your location.")
         except Exception as e:
             st.error(f"Unable to fetch resources. {e}")
-
