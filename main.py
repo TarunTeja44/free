@@ -36,13 +36,10 @@ if st.button("Find Nearby Resources"):
 
                 # --- Fetch Resources ---
                 for r_type, tag in resource_queries.items():
-                    # Optimized single-line query, fetch only top 50 nodes
                     query_resource = f'[out:json][timeout:25];node(around:{radius_km*1000},{location.latitude},{location.longitude}){tag};out center 50;'
-                    
                     try:
                         res = requests.get(overpass_url, params={'data': query_resource}, timeout=30)
                         data = res.json()
-                        
                         for element in data.get('elements', []):
                             name = element['tags'].get('name', 'Unknown')
                             rlat = element.get('lat')
@@ -56,7 +53,6 @@ if st.button("Find Nearby Resources"):
                                 if "private" in operator:
                                     final_type = "Private Hospital"
                                 else:
-                                    # If operator missing, assume Government Hospital
                                     final_type = "Government Hospital"
 
                             # --- Get Location from tags ---
@@ -70,7 +66,6 @@ if st.button("Find Nearby Resources"):
                                 'Distance_km': distance,
                                 'Location': area
                             })
-
                     except:
                         st.warning(f"Error fetching {r_type} data from OpenStreetMap.")
 
@@ -81,19 +76,10 @@ if st.button("Find Nearby Resources"):
                     df = pd.DataFrame(all_results)
                     df = df.sort_values(by='Distance_km')
                     st.subheader(f"Nearby Resources within {radius_km} km")
-                    
-                    search_term = st.text_input("Search in results:")
-                    if search_term:
-                        df_filtered = df[df.apply(lambda row: search_term.lower() in row.astype(str).str.lower().to_string(), axis=1)]
-                        st.dataframe(df_filtered[['Name','Type','Distance_km','Location']])
-                    else:
-                        st.dataframe(df[['Name','Type','Distance_km','Location']])
+                    st.dataframe(df[['Name','Type','Distance_km','Location']])
 
                     # --- Notify missing categories ---
                     categories = ["Government Hospital","Private Hospital","Medical Camp","Police Station"]
                     for cat in categories:
                         if not any(df['Type'] == cat):
                             st.info(f"No {cat} found near your location.")
-
-        except Exception as e:
-            st.error("Unable to fetch resources. Please try again later.")
