@@ -51,7 +51,7 @@ if st.button("Find Nearby Resources"):
                             rlon = element.get('lon')
                             distance = round(geodesic(user_location, (rlat, rlon)).km, 2) if rlat and rlon else None
                             
-                            # Determine type for hospitals
+                            # Determine hospital type
                             final_type = r_type
                             if r_type == "Hospital":
                                 operator = element['tags'].get('operator', '').lower()
@@ -62,12 +62,17 @@ if st.button("Find Nearby Resources"):
                                 else:
                                     final_type = "Hospital (Unknown Type)"
                             
-                            # Reverse geocode for accurate location
-                            try:
-                                loc = geolocator.reverse((rlat, rlon), timeout=10)
-                                area = loc.address if loc else "Unknown"
-                                time.sleep(1)  # Avoid hitting rate limits
-                            except:
+                            # Get accurate location: use OSM tags first, fallback to reverse geocode
+                            tags = element.get('tags', {})
+                            area = tags.get('addr:full') or tags.get('addr:street') or tags.get('addr:city') or tags.get('addr:suburb') or tags.get('addr:state')
+                            if not area and rlat and rlon:
+                                try:
+                                    loc = geolocator.reverse((rlat, rlon), timeout=10)
+                                    area = loc.address if loc else "Unknown"
+                                    time.sleep(1)  # Only sleep when reverse geocoding
+                                except:
+                                    area = "Unknown"
+                            elif not area:
                                 area = "Unknown"
                             
                             all_results.append({
@@ -87,7 +92,6 @@ if st.button("Find Nearby Resources"):
                     df = df.sort_values(by='Distance_km')
                     st.subheader(f"Nearby Resources within {radius_km} km")
                     
-                    # Search box
                     search_term = st.text_input("Search in results:")
                     if search_term:
                         df_filtered = df[df.apply(lambda row: search_term.lower() in row.astype(str).str.lower().to_string(), axis=1)]
