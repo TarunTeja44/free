@@ -24,6 +24,9 @@ df = pd.DataFrame(data)
 # User input for location
 place_name = st.text_input("Enter your location (city/area/sub-area):", "Hyderabad")
 
+# User input for search range
+radius_km = st.number_input("Enter search radius in km:", min_value=1, max_value=50, value=10)
+
 if st.button("Find Nearby Resources"):
     geolocator = Nominatim(user_agent="free_resources_finder")
     location = geolocator.geocode(place_name)
@@ -32,8 +35,8 @@ if st.button("Find Nearby Resources"):
         user_location = (location.latitude, location.longitude)
         st.success(f"Location found: {location.address}")
 
-        # Find nearby resources within 2 km
-        def nearby_resources(df, user_location, radius_km=2):
+        # Find nearby resources within radius
+        def nearby_resources(df, user_location, radius_km):
             resources = []
             for index, row in df.iterrows():
                 resource_location = (row['Latitude'], row['Longitude'])
@@ -42,9 +45,9 @@ if st.button("Find Nearby Resources"):
                     resources.append({**row, 'Distance_km': round(distance, 2)})
             return pd.DataFrame(resources)
 
-        nearby_df = nearby_resources(df, user_location)
+        nearby_df = nearby_resources(df, user_location, radius_km)
 
-        st.subheader("Nearby Free Resources within 2 km")
+        st.subheader(f"Nearby Free Resources within {radius_km} km")
         if nearby_df.empty:
             st.write("No nearby free resources found!")
         else:
