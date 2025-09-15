@@ -3,11 +3,10 @@ import pandas as pd
 from geopy.geocoders import Nominatim
 from geopy.distance import geodesic
 import requests
-import time
 
-st.title("Hospital and Police Station Finder - India")
+st.title("Hospital and Police Station Finder - India (Optimized)")
 
-# User input
+# --- User Input ---
 place_name = st.text_input("Enter your location (city/area/sub-area):")
 radius_km = st.number_input("Enter search radius in km:", min_value=1, max_value=50, value=10)
 
@@ -16,76 +15,66 @@ if st.button("Find Nearby Resources"):
         st.error("Please enter a location!")
     else:
         try:
-            # Step 1: Get coordinates
+            # --- Get Coordinates ---
             geolocator = Nominatim(user_agent="hospital_police_finder")
             location = geolocator.geocode(place_name, timeout=10)
-            
             if not location:
-                st.error("Location not found. Try a more specific city/area/sub-area.")
+                st.error("Location not found. Try a more specific area.")
             else:
                 user_location = (location.latitude, location.longitude)
-                st.success(f"Coordinates found: {location.latitude}, {location.longitude}")
-                
-                # Step 2: Define resource queries
+                st.success(f"Coordinates: {location.latitude}, {location.longitude}")
+
+                # --- Define Resources ---
                 resource_queries = {
                     "Hospital": '[amenity=hospital]',
-                    "Medical Camps": '[healthcare=clinic][charity=yes]',
+                    "Medical Camp": '[healthcare=clinic][charity=yes]',
                     "Police Station": '[amenity=police]'
                 }
-                
+
                 all_results = []
                 overpass_url = "http://overpass-api.de/api/interpreter"
-                
+
+                # --- Fetch Resources ---
                 for r_type, tag in resource_queries.items():
-                    # Correctly format Overpass query as single line
-                    query_resource = f'[out:json];node(around:{radius_km*1000},{location.latitude},{location.longitude}){tag};out center;'
+                    # Optimized single-line query, fetch only top 50 nodes
+                    query_resource = f'[out:json][timeout:25];node(around:{radius_km*1000},{location.latitude},{location.longitude}){tag};out center 50;'
                     
                     try:
-                        res_response = requests.get(overpass_url, params={'data': query_resource}, timeout=30)
-                        res_data = res_response.json()
-                        for element in res_data.get('elements', []):
+                        res = requests.get(overpass_url, params={'data': query_resource}, timeout=30)
+                        data = res.json()
+                        
+                        for element in data.get('elements', []):
                             name = element['tags'].get('name', 'Unknown')
                             rlat = element.get('lat')
                             rlon = element.get('lon')
                             distance = round(geodesic(user_location, (rlat, rlon)).km, 2) if rlat and rlon else None
-                            
-                            # Determine hospital type
+
+                            # --- Determine Hospital Type ---
                             final_type = r_type
                             if r_type == "Hospital":
                                 operator = element['tags'].get('operator', '').lower()
-                                if "government" in operator:
-                                    final_type = "Government Hospital"
-                                elif "private" in operator:
+                                if "private" in operator:
                                     final_type = "Private Hospital"
                                 else:
-                                    final_type = "Hospital (Unknown Type)"
-                            
-                            # Use OSM address tags first for faster execution
+                                    # If operator missing, assume Government Hospital
+                                    final_type = "Government Hospital"
+
+                            # --- Get Location from tags ---
                             tags = element.get('tags', {})
                             area = tags.get('addr:full') or tags.get('addr:street') or tags.get('addr:city') \
-                                   or tags.get('addr:suburb') or tags.get('addr:state')
-                            
-                            # Fallback to reverse geocoding only if needed
-                            if not area and rlat and rlon:
-                                try:
-                                    loc = geolocator.reverse((rlat, rlon), timeout=10)
-                                    area = loc.address if loc else "Unknown"
-                                    time.sleep(1)  # Avoid hitting rate limits
-                                except:
-                                    area = "Unknown"
-                            elif not area:
-                                area = "Unknown"
-                            
+                                   or tags.get('addr:suburb') or tags.get('addr:state') or "Unknown"
+
                             all_results.append({
                                 'Name': name,
                                 'Type': final_type,
                                 'Distance_km': distance,
                                 'Location': area
                             })
+
                     except:
                         st.warning(f"Error fetching {r_type} data from OpenStreetMap.")
-                
-                # Step 3: Display results
+
+                # --- Display Results ---
                 if not all_results:
                     st.info("No nearby resources found!")
                 else:
@@ -93,18 +82,18 @@ if st.button("Find Nearby Resources"):
                     df = df.sort_values(by='Distance_km')
                     st.subheader(f"Nearby Resources within {radius_km} km")
                     
-                    # Search box
                     search_term = st.text_input("Search in results:")
                     if search_term:
                         df_filtered = df[df.apply(lambda row: search_term.lower() in row.astype(str).str.lower().to_string(), axis=1)]
                         st.dataframe(df_filtered[['Name','Type','Distance_km','Location']])
                     else:
                         st.dataframe(df[['Name','Type','Distance_km','Location']])
-                    
-                    # Notify missing categories
-                    categories = ["Government Hospital","Private Hospital","Hospital (Unknown Type)","Medical Camps","Police Station"]
+
+                    # --- Notify missing categories ---
+                    categories = ["Government Hospital","Private Hospital","Medical Camp","Police Station"]
                     for cat in categories:
                         if not any(df['Type'] == cat):
                             st.info(f"No {cat} found near your location.")
-        except Exception:
-            st.error("Unable to fetch location or resources. Please try again later.")
+
+        except Exception as e:
+            st.error("Unable to fetch resources. Please try again later.")
