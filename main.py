@@ -5,44 +5,41 @@ from geopy.distance import geodesic
 
 st.title("Nearby Free Resources Finder")
 
-# Sample dataset
+# Sample dataset across multiple cities for demo
 data = {
     'Name': [
-        'City Library', 'College WiFi Spot', 'Community Cafe', 'Student Study Hall',
-        'Government Hospital', 'Food Donation Center', 'Free Water Point'
+        'City Library Hyderabad', 'College WiFi Hyderabad', 
+        'Government Hospital Delhi', 'Food Donation Center Delhi', 
+        'Free Water Point Mumbai', 'Community Cafe Mumbai'
     ],
-    'Type': [
-        'Library', 'WiFi', 'Food/Drinks', 'Study Space',
-        'Hospital', 'Food/Drinks', 'Water'
-    ],
-    'Latitude': [17.3850, 17.3870, 17.3890, 17.3820, 17.3860, 17.3840, 17.3830],
-    'Longitude': [78.4867, 78.4880, 78.4820, 78.4840, 78.4870, 78.4850, 78.4830]
+    'Type': ['Library', 'WiFi', 'Hospital', 'Food/Drinks', 'Water', 'Food/Drinks'],
+    'Latitude': [17.3850, 17.3870, 28.6139, 28.6200, 19.0760, 19.0800],
+    'Longitude': [78.4867, 78.4880, 77.2090, 77.2100, 72.8777, 72.8800]
 }
 
 df = pd.DataFrame(data)
 
-# User input for location
-place_name = st.text_input("Enter your location (city/area/sub-area):", "Hyderabad")
-
-# User input for search range
+# User input
+place_name = st.text_input("Enter your location (city/area/sub-area):")
 radius_km = st.number_input("Enter search radius in km:", min_value=1, max_value=50, value=10)
 
 if st.button("Find Nearby Resources"):
-    geolocator = Nominatim(user_agent="free_resources_finder")
-    location = geolocator.geocode(place_name)
+    if not place_name.strip():
+        st.error("Please enter a location!")
+    else:
+        geolocator = Nominatim(user_agent="free_resources_finder")
+        location = geolocator.geocode(place_name)
+        
+        if location:
+            user_location = (location.latitude, location.longitude)
+            st.success(f"Location found: {location.address}")
 
-    if location:
-        user_location = (location.latitude, location.longitude)
-        st.success(f"Location found: {location.address}")
-
-        # Find nearby resources within radius
-        def nearby_resources(df, user_location, radius_km):
+            # Find resources within radius
             resources = []
             for index, row in df.iterrows():
                 resource_location = (row['Latitude'], row['Longitude'])
                 distance = geodesic(user_location, resource_location).km
                 if distance <= radius_km:
-                    # Reverse geocode to get area name
                     try:
                         loc = geolocator.reverse(resource_location, exactly_one=True, timeout=10)
                         area = loc.address if loc else "Unknown"
@@ -54,16 +51,12 @@ if st.button("Find Nearby Resources"):
                         'Distance_km': round(distance, 2),
                         'Area': area
                     })
-            return pd.DataFrame(resources)
-
-        nearby_df = nearby_resources(df, user_location, radius_km)
-
-        st.subheader(f"Nearby Free Resources within {radius_km} km")
-        if nearby_df.empty:
-            st.write("No nearby free resources found!")
+            
+            nearby_df = pd.DataFrame(resources)
+            st.subheader(f"Nearby Free Resources within {radius_km} km")
+            if nearby_df.empty:
+                st.write("No nearby free resources found!")
+            else:
+                st.dataframe(nearby_df.sort_values(by='Distance_km'))
         else:
-            # Display sorted by distance
-            nearby_df = nearby_df.sort_values(by='Distance_km')
-            st.dataframe(nearby_df[['Name', 'Type', 'Distance_km', 'Area']])
-    else:
-        st.error("Location not found. Please enter a valid city/area/sub-area.")
+            st.error("Location not found. Please enter a valid city/area/sub-area.")
