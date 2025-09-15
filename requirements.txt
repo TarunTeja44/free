@@ -1,5 +1,5 @@
 streamlit
 pandas
-folium
 geopy
-streamlit_folium
+
+
