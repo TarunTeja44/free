@@ -1,92 +1,63 @@
-import streamlit as st
-import pandas as pd
-from geopy.geocoders import Nominatim
-from geopy.distance import geodesic
-import requests
+from folium.plugins import MarkerCluster
 
-st.title("🚨 Hospital & Police Station Finder - India")
+# Updated colors & icons for better clarity
+colors = {
+    'Hospital': 'red', 'Clinic': 'pink', 'Doctors': 'purple',
+    'Pharmacy': 'green', 'Police Station': 'blue', 'Fire Station': 'orange',
+    'ATM': 'darkpurple', 'Embassy': 'lightgray', 'Tourist Office': 'cadetblue'
+}
 
-# --- User Input ---
-place_name = st.text_input("Enter your location (city/area/sub-area):")
-radius_km = st.number_input("Enter search radius in km:", min_value=1, max_value=50, value=10)
+icons = {
+    'Hospital': 'plus-square', 'Clinic': 'stethoscope', 'Doctors': 'user-md',
+    'Pharmacy': 'prescription-bottle', 'Police Station': 'shield-alt', 'Fire Station': 'fire-extinguisher',
+    'ATM': 'money-bill', 'Embassy': 'university', 'Tourist Office': 'info-circle'
+}
 
-if st.button("Find Nearby Resources"):
-    if not place_name.strip():
-        st.error("Please enter a location!")
-    else:
-        try:
-            geolocator = Nominatim(user_agent="hospital_police_finder")
-            location = geolocator.geocode(place_name, timeout=10)
-            if not location:
-                st.error("Location not found. Try a more specific area.")
-            else:
-                user_location = (location.latitude, location.longitude)
-                st.success(f"✅ Location found: {location.address}")
+# Map
+st.markdown('<div class="section-header">🗺️ Interactive Map</div>', unsafe_allow_html=True)
+m = folium.Map(location=user_loc, zoom_start=13)
 
-                # --- Define Queries ---
-                resource_queries = {
-                    "Hospital": '[amenity=hospital]',
-                    "Medical Camp": '[healthcare=clinic][charity=yes]',
-                    "Police Station": '[amenity=police]',
-                    "Pharmacy": '[amenity=pharmacy]',
-                    "Fire Station": '[amenity=fire_station]',
-                    "Ambulance": '[emergency=ambulance_station]'
-                }
+# Cluster for performance
+marker_cluster = MarkerCluster().add_to(m)
 
-                all_results = []
-                overpass_url = "http://overpass-api.de/api/interpreter"
+# User location
+folium.Marker(
+    user_loc, popup="Your Location",
+    icon=folium.Icon(color='red', icon='star', prefix='fa')
+).add_to(m)
 
-                for r_type, tag in resource_queries.items():
-                    try:
-                        query_resource = f'[out:json][timeout:25];node(around:{radius_km*1000},{location.latitude},{location.longitude}){tag};out center 50;'
-                        res = requests.get(overpass_url, params={'data': query_resource}, timeout=30)
-                        data = res.json()
+for _, row in df.iterrows():
+    # Graceful handling
+    phone = row['Phone'] if row['Phone'] not in ['N/A', '', None] else 'Not available'
+    address = row['Address'] if row['Address'] not in ['N/A', '', None] else 'Address not available'
 
-                        for element in data.get('elements', []):
-                            name = element['tags'].get('name', 'Unknown')
-                            rlat = element.get('lat')
-                            rlon = element.get('lon')
-                            distance = round(geodesic(user_location, (rlat, rlon)).km, 2) if rlat and rlon else None
+    popup = f"""
+    <div style="width:220px;font-family:Inter;">
+        <h4 style="margin:0 0 8px 0;">{row['Name']}</h4>
+        <p style="margin:3px 0;font-size:0.85rem;"><b>Type:</b> {row['Type']}</p>
+        <p style="margin:3px 0;font-size:0.85rem;"><b>Distance:</b> {row['Distance_km']} km</p>
+        <p style="margin:3px 0;font-size:0.85rem;"><b>Phone:</b> {phone}</p>
+        <p style="margin:3px 0;font-size:0.85rem;"><b>Address:</b> {address}</p>
+        <div style="margin-top:10px;">
+            <a href="{row['Google_Maps']}" target="_blank" 
+               style="background:#10b981;color:white;padding:6px 12px;text-decoration:none;
+                      border-radius:6px;margin-right:5px;display:inline-block;font-size:0.8rem;">Map</a>
+            <a href="{row['Directions']}" target="_blank" 
+               style="background:#3b82f6;color:white;padding:6px 12px;text-decoration:none;
+                      border-radius:6px;display:inline-block;font-size:0.8rem;">Directions</a>
+        </div>
+    </div>"""
+    
+    folium.Marker(
+        [row['Latitude'], row['Longitude']],
+        popup=folium.Popup(popup, max_width=250),
+        tooltip=f"{row['Name']} ({row['Distance_km']} km)",
+        icon=folium.Icon(color=colors.get(row['Type'], 'gray'),
+                         icon=icons.get(row['Type'], 'info-sign'), prefix='fa')
+    ).add_to(marker_cluster)
 
-                            # Try to get a clean address
-                            tags = element.get('tags', {})
-                            address_parts = [
-                                tags.get('addr:housename'),
-                                tags.get('addr:housenumber'),
-                                tags.get('addr:street'),
-                                tags.get('addr:suburb'),
-                                tags.get('addr:city'),
-                                tags.get('addr:state')
-                            ]
-                            area = ', '.join([a for a in address_parts if a])
-                            if not area:
-                                area = "Address not available"
+folium.Circle(
+    user_loc, radius=radius_km*1000, color='#667eea', fill=True, fillOpacity=0.1
+).add_to(m)
 
-                            # --- Google Maps Link ---
-                            if rlat and rlon:
-                                maps_link = f"https://www.google.com/maps?q={rlat},{rlon}"
-                            else:
-                                maps_link = "N/A"
-
-                            all_results.append({
-                                'Name': name,
-                                'Type': r_type,
-                                'Distance (km)': distance,
-                                'Address': area,
-                                'Google Maps': f"[Open Map]({maps_link})"
-                            })
-                    except Exception as e:
-                        st.warning(f"Error fetching {r_type} data: {e}")
-
-                # --- Display Results ---
-                if not all_results:
-                    st.info("No nearby resources found!")
-                else:
-                    df = pd.DataFrame(all_results)
-                    df = df.sort_values(by='Distance (km)')
-                    st.subheader(f"Nearby Resources within {radius_km} km")
-                    st.markdown("Click **Open Map** to view on Google Maps 🌍")
-                    st.write(df.to_markdown(index=False), unsafe_allow_html=True)
-
-        except Exception as e:
-            st.error(f"Unable to fetch resources. {e}")
+folium_static(m, width=1200, height=500)
