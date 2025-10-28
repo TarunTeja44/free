@@ -1,150 +1,217 @@
 import streamlit as st
-import pandas as pd
-import requests
-from geopy.geocoders import Nominatim
-import folium
-from folium.plugins import MarkerCluster
-from streamlit_folium import folium_static
 
-# --- Streamlit Page Config ---
-st.set_page_config(page_title="🚨 Emergency Services Finder", layout="wide")
+st.set_page_config(page_title="Emergency Services India", layout="centered")
 
-# --- Title ---
-st.markdown("<h1 style='text-align:center;'>🚨 Emergency Services Finder (India)</h1>", unsafe_allow_html=True)
-st.write("Find nearby hospitals, clinics, police stations, pharmacies, and more — powered by OpenStreetMap and AI geolocation!")
+st.markdown("""
+    <style>
+    body {
+        background: #f4f8fc;
+    }
+    .big-header {
+        margin-top: 1.5rem;
+        margin-bottom: 0.1rem;
+        font-size: 2.4rem;
+        font-weight: 700;
+        text-align: center;
+        color: #232c43;
+    }
+    .subtitle {
+        text-align: center;
+        color: #8195a7;
+        font-size: 1.07rem;
+        margin-bottom: 2.2rem;
+    }
+    .hotline-row {
+        display: flex;
+        justify-content: center;
+        gap: 2rem;
+    }
+    .hotline-card {
+        background: white;
+        border-radius: 1.1rem;
+        padding: 1.1rem;
+        box-shadow: 0px 2px 16px 0 #e0e6f2;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        font-size: 1.2rem;
+        min-width: 120px;
+    }
+    .hotline-num {
+        color: #ed3b42;
+        font-size: 1.8rem;
+        font-weight: 700;
+        margin-bottom: 0.25rem;
+    }
+    .hotline-label {
+        color: #21233b; 
+        font-size: 1.1rem;
+        margin-bottom: 0.12rem;
+        font-weight: 500;
+    }
+    .hotline-action {
+        color: #528bc9;
+        font-size: 0.85rem;
+        margin-top: 0.35rem;
+    }
 
-# --- Input Section ---
-st.sidebar.header("🔍 Search Options")
-location_input = st.sidebar.text_input("Enter your location (City, Area, or PIN):", "Hyderabad")
-radius_km = st.sidebar.slider("Search radius (km):", 1, 20, 5)
-service_types = st.sidebar.multiselect(
-    "Select service categories:",
-    ["Hospital", "Clinic", "Doctors", "Pharmacy", "Police Station", "Fire Station", "ATM", "Embassy", "Tourist Office"],
-    default=["Hospital", "Police Station", "Pharmacy"]
-)
+    .loc-card {
+        background: white;
+        border-radius: 1rem;
+        box-shadow: 0px 2px 10px #e2eaf5;
+        padding: 2rem 2rem 0.7rem 2rem;
+        max-width: 525px;
+        margin: 1.8rem auto 1.3rem auto;
+    }
 
-# --- Geocoding ---
-@st.cache_data
-def get_coordinates(place):
-    try:
-        geolocator = Nominatim(user_agent="emergency_locator")
-        loc = geolocator.geocode(place)
-        if loc:
-            return loc.latitude, loc.longitude
-        return None
-    except:
-        return None
+    .search-btn {
+        background: #17a2f8;
+        color: white;
+        width: 100%;
+        font-size: 1.1rem;
+        padding: 0.7rem;
+        border: none;
+        outline: none;
+        border-radius: 0.8rem;
+        font-weight: 600;
+        transition: all 0.2s;
+        margin-top: 0.4rem;
+        margin-bottom: 0.6rem;
+    }
+    .search-btn:hover {
+        background: #046fbb;
+        cursor: pointer;
+    }
 
-coords = get_coordinates(location_input)
+    /* Service selection grid */
+    .service-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1.1rem;
+        margin-top: 2.1rem; margin-bottom: 1.1rem;
+        justify-items: center;
+    }
+    .service-box {
+        background: white;
+        border-radius: 1rem;
+        border: 2px solid #e9eefa;
+        display: flex;
+        align-items: center;
+        flex-direction: column;
+        padding: 1.2rem 0.5rem 0.8rem 0.5rem;
+        cursor: pointer;
+        min-width: 115px;
+        min-height: 93px;
+        box-shadow: 0px 1.5px 10px 0 #eceff6;
+        transition: border-color 0.17s, box-shadow 0.18s;
+    }
+    .service-box.selected {
+        border: 2.7px solid #30a1e6;
+        background: #eafdff;
+        box-shadow: 0px 2.5px 14px 0 #cfe7f8;
+    }
+    .svc-ico {
+        font-size: 1.8rem;
+        margin-bottom: 0.3rem;
+        color: #18a4ea;
+    }
+    .svc-label {
+        font-size: 1rem;
+        font-weight: 500;
+        color: #233656;
+    }
+    .select-links {
+        text-align: right;
+        margin-right: 1.6rem;
+        margin-bottom: 0.7rem;
+        color: #12a2e2;
+        font-size: 0.89rem;
+    }
+    .select-links span {
+        cursor: pointer;
+        margin-left: 1.2rem;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-if not coords:
-    st.error("❌ Could not find that location. Try entering a more specific name.")
-    st.stop()
-
-user_loc = coords
-
-# --- Query Overpass API ---
-@st.cache_data
-def get_places(lat, lon, radius, services):
-    results = []
-    for service in services:
-        query = f"""
-        [out:json];
-        (
-          node["amenity"="{service.lower()}"](around:{radius*1000},{lat},{lon});
-          way["amenity"="{service.lower()}"](around:{radius*1000},{lat},{lon});
-        );
-        out center;
-        """
-        try:
-            r = requests.get("https://overpass-api.de/api/interpreter", params={'data': query})
-            if r.status_code == 200:
-                data = r.json()
-                for el in data['elements']:
-                    lat_ = el.get('lat', el.get('center', {}).get('lat'))
-                    lon_ = el.get('lon', el.get('center', {}).get('lon'))
-                    name = el.get('tags', {}).get('name', 'Unnamed')
-                    addr = el.get('tags', {}).get('addr:full') or el.get('tags', {}).get('addr:street', 'Address not available')
-                    phone = el.get('tags', {}).get('phone', 'Not available')
-                    dist = round(((abs(lat - lat_)**2 + abs(lon - lon_)**2)**0.5) * 111, 2) if lat_ and lon_ else None
-                    results.append({
-                        "Name": name,
-                        "Type": service.title(),
-                        "Latitude": lat_,
-                        "Longitude": lon_,
-                        "Address": addr,
-                        "Phone": phone,
-                        "Distance_km": dist,
-                        "Google_Maps": f"https://www.google.com/maps?q={lat_},{lon_}",
-                        "Directions": f"https://www.google.com/maps/dir/{lat},{lon}/{lat_},{lon_}"
-                    })
-        except:
-            pass
-    return pd.DataFrame(results)
-
-with st.spinner("🔎 Fetching nearby emergency services..."):
-    df = get_places(user_loc[0], user_loc[1], radius_km, service_types)
-
-if df.empty:
-    st.warning("😕 No results found within this area and radius.")
-    st.stop()
-
-# --- Results Header ---
-st.markdown('<h2 style="margin-top:20px;">🗺️ Interactive Map</h2>', unsafe_allow_html=True)
-
-# --- Map Setup ---
-colors = {
-    'Hospital': 'red', 'Clinic': 'pink', 'Doctors': 'purple',
-    'Pharmacy': 'green', 'Police Station': 'blue', 'Fire Station': 'orange',
-    'ATM': 'darkpurple', 'Embassy': 'lightgray', 'Tourist Office': 'cadetblue'
-}
-
-icons = {
-    'Hospital': 'plus-square', 'Clinic': 'stethoscope', 'Doctors': 'user-md',
-    'Pharmacy': 'prescription-bottle', 'Police Station': 'shield-alt', 'Fire Station': 'fire-extinguisher',
-    'ATM': 'money-bill', 'Embassy': 'university', 'Tourist Office': 'info-circle'
-}
-
-m = folium.Map(location=user_loc, zoom_start=13)
-marker_cluster = MarkerCluster().add_to(m)
-
-folium.Marker(
-    user_loc, popup="📍 Your Location",
-    icon=folium.Icon(color='red', icon='star', prefix='fa')
-).add_to(m)
-
-for _, row in df.iterrows():
-    popup = f"""
-    <div style="width:220px;font-family:Inter;">
-        <h4 style="margin:0 0 8px 0;">{row['Name']}</h4>
-        <p><b>Type:</b> {row['Type']}</p>
-        <p><b>Distance:</b> {row['Distance_km']} km</p>
-        <p><b>Phone:</b> {row['Phone']}</p>
-        <p><b>Address:</b> {row['Address']}</p>
-        <div style="margin-top:10px;">
-            <a href="{row['Google_Maps']}" target="_blank" 
-               style="background:#10b981;color:white;padding:6px 12px;text-decoration:none;
-                      border-radius:6px;margin-right:5px;display:inline-block;font-size:0.8rem;">Map</a>
-            <a href="{row['Directions']}" target="_blank" 
-               style="background:#3b82f6;color:white;padding:6px 12px;text-decoration:none;
-                      border-radius:6px;display:inline-block;font-size:0.8rem;">Directions</a>
-        </div>
+# ---- HOTLINE CARDS ----
+st.markdown('<div class="big-header">Emergency Hotlines</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Tap to call immediately</div>', unsafe_allow_html=True)
+st.markdown("""
+    <div class="hotline-row">
+        <div class="hotline-card"><div class="hotline-num">100</div>
+        <div class="hotline-label">Police</div><div class="hotline-action">📞 Tap to call</div></div>
+        <div class="hotline-card"><div class="hotline-num">101</div>
+        <div class="hotline-label">Fire</div><div class="hotline-action">📞 Tap to call</div></div>
+        <div class="hotline-card"><div class="hotline-num">108</div>
+        <div class="hotline-label">Ambulance</div><div class="hotline-action">📞 Tap to call</div></div>
+        <div class="hotline-card"><div class="hotline-num">112</div>
+        <div class="hotline-label">Emergency</div><div class="hotline-action">📞 Tap to call</div></div>
     </div>
-    """
-    folium.Marker(
-        [row['Latitude'], row['Longitude']],
-        popup=folium.Popup(popup, max_width=250),
-        tooltip=f"{row['Name']} ({row['Distance_km']} km)",
-        icon=folium.Icon(color=colors.get(row['Type'], 'gray'),
-                         icon=icons.get(row['Type'], 'info-sign'), prefix='fa')
-    ).add_to(marker_cluster)
+""", unsafe_allow_html=True)
 
-folium.Circle(
-    user_loc, radius=radius_km*1000, color='#667eea', fill=True, fillOpacity=0.1
-).add_to(m)
+# ---- LOCATION INPUT ----
+with st.container():
+    st.markdown('<div class="loc-card">', unsafe_allow_html=True)
+    loc = st.text_input("Location", value="", placeholder="Enter city, area, or landmark...")
+    use_current = st.button("Use Current")
+    radius = st.selectbox("Search Radius", ["1 km","2 km","5 km","10 km","20 km","50 km"], index=2)
+    st.markdown('<button class="search-btn">🔍 Search Services</button>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-folium_static(m, width=1200, height=500)
+# ---- SERVICE SELECTION ----
+service_list = [
+    ("Hospital", "🏥"), ("Clinic", "➕"), ("Pharmacy", "💊"), ("Doctors", "🩺"),
+    ("Police", "🛡️"), ("Fire Station", "🔥"), ("Embassy", "🏛️"), ("ATM", "💳"),
+    ("Tourist Office", "ℹ️")
+]
 
-# --- Table View ---
-st.markdown('<h2 style="margin-top:30px;">📋 Results</h2>', unsafe_allow_html=True)
-st.dataframe(df[['Name', 'Type', 'Distance_km', 'Address', 'Phone']])
+# Store selection with session_state (simulate toggles)
+if "svc_selected" not in st.session_state:
+    st.session_state.svc_selected = {"Hospital", "Pharmacy", "Police"}
+
+def toggle_service(idx):
+    svc = service_list[idx][0]
+    if svc in st.session_state.svc_selected:
+        st.session_state.svc_selected.remove(svc)
+    else:
+        st.session_state.svc_selected.add(svc)
+
+def select_all():
+    st.session_state.svc_selected = set([svc for svc, _ in service_list])
+def clear_all():
+    st.session_state.svc_selected = set()
+
+st.markdown('<div class="section-header" style="font-size:1.25rem;margin-top:1.8rem;" >Select Services'
+            '<span class="select-links">'
+            '<span onclick="window.parent.postMessage({eventType:\'selectAll\'}, \'*\')">Select All</span>|'
+            '<span onclick="window.parent.postMessage({eventType:\'clearAll\'}, \'*\')">Clear All</span>'
+            '</span>'
+            '</div>', unsafe_allow_html=True)
+
+# Service grid
+cols = st.columns(4)
+curr = 0
+for row in range((len(service_list) + 3)//4):
+    for col in cols:
+        idx = row*4+cols.index(col)
+        if idx >= len(service_list):
+            continue
+        svc, ico = service_list[idx]
+        is_selected = svc in st.session_state.svc_selected
+        sel_cls = "service-box selected" if is_selected else "service-box"
+        with col:
+            st.markdown(f"""
+                <div class="{sel_cls}" 
+                     onclick="window.parent.postMessage({{eventType:'svc{idx}'}}, '*')">
+                  <div class="svc-ico">{ico}</div>
+                  <div class="svc-label">{svc}</div>
+                </div>
+            """, unsafe_allow_html=True)
+    curr += 1
+
+st.markdown(
+    '<div style="text-align:center;color:#7c8ea6;font-size:1rem;padding-top:1.9rem;">'
+    'Enter a location and select services to start searching for emergency resources near you.</div>',
+    unsafe_allow_html=True
+)
